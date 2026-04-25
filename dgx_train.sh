@@ -81,17 +81,32 @@ src = pathlib.Path(sys.argv[1])
 dst = pathlib.Path(sys.argv[2])
 files = list(src.glob("**/*.pdf")) if src.is_dir() else [src]
 print(f"Converting {len(files)} PDF(s)...")
+converted = 0
 for f in files:
     try:
         doc = fitz.open(f)
         text = "\n\n".join(page.get_text() for page in doc)
         doc.close()
-        out = dst / (f.stem + ".txt")
+        if len(text.strip()) < 100:
+            print(f"  – {f.name}: empty/unreadable, skipping")
+            continue
+        # preserve subdirectory path to avoid name collisions across jurisdictions
+        # e.g. legal/wash/wash-2d/47.pdf → corpus/wash-2d_47.txt
+        if src.is_dir():
+            rel   = f.relative_to(src)
+            parts = list(rel.parts)
+            # flatten: join parent dirs with underscore, drop .pdf
+            stem  = "_".join(parts[:-1] + [f.stem]) if len(parts) > 1 else f.stem
+        else:
+            stem = f.stem
+        out = dst / (stem + ".txt")
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text, encoding="utf-8")
-        print(f"  ✓ {f.name} → {out.name}  ({len(text):,} chars)")
+        converted += 1
+        print(f"  ✓ {'/'.join(rel.parts) if src.is_dir() else f.name} → {out.name}  ({len(text):,} chars)")
     except Exception as e:
         print(f"  ✗ {f.name}: {e}")
-print("Done.")
+print(f"Done. {converted}/{len(files)} converted.")
 PYEOF
     success "PDFs converted → $OUT_DIR"
 }
