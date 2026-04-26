@@ -109,7 +109,11 @@ def main():
     cutoff_len   = int(cfg.get("cutoff_len", 2048))
     lora_rank    = int(cfg.get("lora_rank", 8))
     lora_alpha   = int(cfg.get("lora_alpha", lora_rank))
-    lora_dropout = float(cfg.get("lora_dropout", 0.05))
+    lora_dropout = float(cfg.get("lora_dropout", 0.0))
+    if lora_dropout != 0.0:
+        print(f"[WARN] lora_dropout={lora_dropout} disables Unsloth fast-patching and triggers a PEFT "
+              f"bug with custom modules. Forcing to 0.0 for safe operation.")
+        lora_dropout = 0.0
     max_samples  = int(cfg["max_samples"]) if cfg.get("max_samples") else None
     use_bf16     = bool(cfg.get("bf16", True))
 
@@ -118,8 +122,15 @@ def main():
         output_dir = str(SCRIPT_DIR / output_dir)
     pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    lora_target    = cfg.get("lora_target", "all")
-    target_modules = "all-linear" if lora_target in ("all", "all-linear") else lora_target.split(",")
+    lora_target = cfg.get("lora_target", "all")
+    # Never pass "all-linear" as a bare string — PEFT 0.17.x iterates it as characters.
+    # Use the explicit Gemma/general linear layer list instead.
+    _ALL_LINEAR = ["q_proj", "k_proj", "v_proj", "o_proj",
+                   "gate_proj", "up_proj", "down_proj"]
+    if lora_target in ("all", "all-linear"):
+        target_modules = _ALL_LINEAR
+    else:
+        target_modules = [t.strip() for t in lora_target.split(",") if t.strip()]
 
     # ── model ────────────────────────────────────────────────────────────────────
     print(f"\n[INFO] Loading model: {model_name}")
