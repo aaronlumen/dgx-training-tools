@@ -54,11 +54,31 @@ ensure_unsloth() {
     fi
 }
 
-# ── training runner ──────────────────────────────────────────────────────────
-run_trainer() {
+# ── training backend selector + runner ───────────────────────────────────────
+select_and_run() {
     local yaml="$1"
+    echo ""
+    echo -e "${YELLOW}── Training Backend ──${NC}"
+    echo "  1) Unsloth   — faster, lower VRAM, recommended for this GPU (default)"
+    echo "  2) LLaMA-Factory CLI — full framework, more options, heavier deps"
+    read -rp "Backend [1]: " BACKEND_CHOICE
+    BACKEND_CHOICE="${BACKEND_CHOICE:-1}"
+
     cd "$SCRIPT_DIR"
-    "$PYTHON" "$SCRIPT_DIR/unsloth_trainer.py" "$yaml"
+    case "$BACKEND_CHOICE" in
+        2)
+            info "Using LLaMA-Factory CLI…"
+            if python3 -c "import llamafactory" &>/dev/null; then
+                python3 -m llamafactory.cli train "$yaml"
+            else
+                PYTHONPATH="$SCRIPT_DIR/src" python3 -m llamafactory.cli train "$yaml"
+            fi
+            ;;
+        *)
+            info "Using Unsloth…"
+            "$PYTHON" "$SCRIPT_DIR/unsloth_trainer.py" "$yaml"
+            ;;
+    esac
 }
 
 # ── PDF → text ────────────────────────────────────────────────────────────────
@@ -411,11 +431,12 @@ for k in d: print('  •', k)
     read -rp "Launch training now? [y/N]: " LAUNCH
     if [[ "${LAUNCH,,}" == "y" ]]; then
         info "Starting training…"
-        run_trainer "$YAML_FILE"
+        select_and_run "$YAML_FILE"
         success "Training complete. Outputs: $OUT_DIR"
     else
         info "Config saved. Run manually:"
-        echo "  $PYTHON $SCRIPT_DIR/unsloth_trainer.py $YAML_FILE"
+        echo "  Unsloth:        $PYTHON $SCRIPT_DIR/unsloth_trainer.py $YAML_FILE"
+        echo "  LLaMA-Factory:  PYTHONPATH=$SCRIPT_DIR/src python3 -m llamafactory.cli train $YAML_FILE"
     fi
 }
 
@@ -436,7 +457,7 @@ resume_training() {
     [[ ! -f "$YAML_FILE" ]] && { warn "Config not found: $YAML_FILE"; return; }
 
     info "Running with $YAML_FILE"
-    run_trainer "$YAML_FILE"
+    select_and_run "$YAML_FILE"
     success "Training complete."
 }
 
@@ -463,7 +484,7 @@ run_yaml() {
     [[ "${CONFIRM,,}" != "y" ]] && { info "Cancelled."; return; }
 
     info "Starting training…"
-    run_trainer "$YAML_FILE"
+    select_and_run "$YAML_FILE"
     success "Done."
 }
 
