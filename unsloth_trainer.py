@@ -9,6 +9,16 @@ import subprocess
 SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
 DATA_DIR   = SCRIPT_DIR / "data"
 
+# GB10 (sm_121) fix: Triton 3.5.x bundles a ptxas that doesn't know sm_121a.
+# Point it at the system CUDA 13.0 ptxas which does. Must be set before
+# any triton/torch import happens.
+_SYSTEM_PTXAS = "/usr/local/cuda/bin/ptxas"
+if pathlib.Path(_SYSTEM_PTXAS).exists():
+    os.environ.setdefault("TRITON_PTXAS_PATH", _SYSTEM_PTXAS)
+# Suppress wandb even if WANDB_API_KEY is in the environment
+os.environ.setdefault("WANDB_DISABLED", "true")
+os.environ.setdefault("WANDB_MODE", "disabled")
+
 
 def _ensure_unsloth():
     try:
