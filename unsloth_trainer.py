@@ -63,7 +63,6 @@ def _load_one_dataset(name, max_samples=None):
             entry["hf_hub_url"],
             name=entry.get("subset"),
             split=entry.get("split", "train"),
-            trust_remote_code=True,
         )
     else:
         raise ValueError(f"Cannot load '{name}': no file_name or hf_hub_url")
@@ -170,6 +169,9 @@ def main():
     for name in names:
         try:
             ds = _load_one_dataset(name, max_samples)
+            if len(ds) == 0:
+                print(f"  ✗ {name}: 0 samples — skipping")
+                continue
             print(f"  ✓ {name}: {len(ds):,} samples")
             loaded.append(ds)
         except Exception as exc:
@@ -181,6 +183,20 @@ def main():
 
     train_ds = concatenate_datasets(loaded) if len(loaded) > 1 else loaded[0]
     print(f"[INFO] Total training samples: {len(train_ds):,}")
+
+    # fix_untrained_tokens crashes on tied-embedding models (tie_word_embeddings=True)
+    # because lm_head is a meta tensor. Patch it to handle that gracefully.
+    try:
+        import unsloth_zoo.tokenizer_utils as _tu
+        _orig_fix = _tu.fix_untrained_tokens
+        def _safe_fix(model, *args, **kwargs):
+            try:
+                return _orig_fix(model, *args, **kwargs)
+            except NotImplementedError:
+                print("[INFO] fix_untrained_tokens skipped (tied lm_head is meta tensor)")
+        _tu.fix_untrained_tokens = _safe_fix
+    except Exception:
+        pass
 
     # ── training ─────────────────────────────────────────────────────────────────
     trainer = SFTTrainer(
