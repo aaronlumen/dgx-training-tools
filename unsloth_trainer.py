@@ -162,6 +162,24 @@ def main():
         random_state=42,
     )
 
+    # Unsloth forces args.bf16_full_eval = args.bf16 at SFTTrainer init time, which
+    # triggers Trainer._move_model_to_device() even during .train(). On Gemma/Blackwell
+    # the tied lm_head is a meta tensor and .to() crashes. Patch the method to skip
+    # the move when the model is already placed on device by unsloth.
+    import transformers as _tf
+    if not getattr(_tf.Trainer._move_model_to_device, "_unsloth_patched", False):
+        _orig_move = _tf.Trainer._move_model_to_device
+        def _safe_move(self, model, device):
+            try:
+                return _orig_move(self, model, device)
+            except NotImplementedError as _e:
+                if "meta tensor" in str(_e):
+                    pass
+                else:
+                    raise
+        _safe_move._unsloth_patched = True
+        _tf.Trainer._move_model_to_device = _safe_move
+
     # ── datasets ─────────────────────────────────────────────────────────────────
     names = [n.strip() for n in str(cfg["dataset"]).split(",")]
     print(f"\n[INFO] Loading datasets: {names}")
